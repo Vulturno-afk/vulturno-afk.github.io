@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Birthday Deployment v1.0.0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+
+  <style>
+    /* ============================================================
+       RESET & BASE
+    ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --void:        #08080f;
+      --panel:       #0f0f1a;
+      --surface:     #13131f;
+      --border:      rgba(255,255,255,0.07);
+      --cyan:        #00d4ff;
+      --violet:      #7c3aed;
+      --green:       #10b981;
+      --amber:       #f59e0b;
+      --text:        #e8e8f0;
+      --muted:       #5a5a78;
+      --dim:         #3a3a52;
+      --glass-bg:    rgba(15,15,28,0.75);
+      --glass-bdr:   rgba(124,58,237,0.25);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--void);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      overflow: hidden;
+    }
+
+    /* ============================================================
+       CANVAS BACKGROUND
+    ============================================================ */
+    #bg-canvas {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       GRID OVERLAY
+    ============================================================ */
+    .grid-overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       STAGE WRAPPER
+    ============================================================ */
+    #stage {
+      position: relative; z-index: 10;
+      width: 100%; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ============================================================
+       TERMINAL
+    ============================================================ */
+    #terminal {
+      width: min(760px, 94vw);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow:
+        0 0 0 1px rgba(0,212,255,0.05),
+        0 32px 80px rgba(0,0,0,0.7),
+        0 0 60px rgba(124,58,237,0.08);
+      overflow: hidden;
+      transition: transform 0.6s cubic-bezier(0.16,1,0.3,1),
+                  opacity  0.6s cubic-bezier(0.16,1,0.3,1);
+    }
+
+    .terminal-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .terminal-title {
+      flex: 1; text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .terminal-body {
+      padding: 24px;
+      min-height: 320px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(12px, 2vw, 14px);
+      line-height: 1.8;
+    }
+
+    .line { display: flex; align-items: baseline; gap: 8px; opacity: 0; }
+    .line.visible { opacity: 1; }
+
+    .prompt { color: var(--violet); user-select: none; }
+    .cmd    { color: var(--text); }
+    .info   { color: var(--muted); }
+    .ok     { color: var(--green); }
+    .hi     { color: var(--cyan); }
+    .warn   { color: var(--amber); }
+
+    /* Cursor blink */
+    .cursor {
+      display: inline-block;
+      width: 8px; height: 14px;
+      background: var(--cyan);
+      vertical-align: middle;
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ============================================================
+       PROGRESS BAR
+    ============================================================ */
+    .progress-wrap {
+      margin: 6px 0 2px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .progress-wrap.visible { opacity: 1; }
+    .progress-track {
+      width: 100%; height: 4px;
+      background: var(--dim);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--violet), var(--cyan));
+      box-shadow: 0 0 8px var(--cyan);
+      transition: width 0.05s linear;
+    }
+    .progress-label {
+      display: flex; justify-content: space-between;
+      margin-top: 4px;
+      font-size: 10px; color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ============================================================
+       INVITATION CARD
+    ============================================================ */
+    #card {
+      position: absolute;
+      width: min(520px, 92vw);
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-bdr);
+      border-radius: 20px;
+      backdrop-filter: blur(32px) saturate(160%);
+      -webkit-backdrop-filter: blur(32px) saturate(160%);
+      box-shadow:
+        0 0 0 1px rgba(0,212,255,0.06),
+        0 40px 100px rgba(0,0,0,0.8),
+        0 0 80px rgba(124,58,237,0.15),
+        inset 0 1px 0 rgba(255,255,255,0.06);
+      opacity: 0;
+      transform: translateY(40px) scale(0.96);
+      pointer-events: none;
+      overflow: hidden;
+    }
+    #card.active { pointer-events: all; }
+
+    /* Card header glow strip */
+    .card-glow {
+      height: 3px;
+      background: linear-gradient(90deg, var(--violet), var(--cyan), var(--green));
+      box-shadow: 0 0 20px var(--cyan);
+    }
+
+    .card-header {
+      padding: 28px 32px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-eyebrow {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; letter-spacing: 0.12em;
+      color: var(--cyan); text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .card-title {
+      font-family: 'Inter', sans-serif;
+      font-size: clamp(20px, 5vw, 28px);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    .card-subtitle {
+      margin-top: 6px;
+      font-size: 13px; color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .card-body {
+      padding: 24px 32px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .meta-item {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .meta-key {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px; letter-spacing: 0.1em;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .meta-val {
+      font-size: 15px; font-weight: 600;
+      color: var(--text);
+    }
+    .meta-val .tag {
+      display: inline-block;
+      font-size: 10px; font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 2px 8px; border-radius: 999px;
+      background: rgba(16,185,129,0.15);
+      color: var(--green);
+      border: 1px solid rgba(16,185,129,0.3);
+    }
+
+    /* Logo click counter (easter egg) */
+    .card-logo-wrap {
+      display: flex; align-items: center; gap: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .card-logo {
+      font-size: 36px; line-height: 1;
+    }
+
+    .card-actions {
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1; min-width: 140px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 13px 20px;
+      border-radius: 10px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; border: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: -0.01em;
+      text-decoration: none;
+    }
+    .btn:hover  { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--violet), #5b21b6);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 28px rgba(124,58,237,0.6); }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.07); }
+
+    /* Countdown */
+    .countdown-wrap {
+      display: flex; justify-content: center; gap: 8px;
+      margin: 20px 0 0;
+      flex-wrap: wrap;
+    }
+    .count-cell {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      text-align: center; min-width: 62px;
+    }
+    .count-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 22px; font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: -0.02em;
+    }
+    .count-lbl {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-top: 2px;
+    }
+
+    /* Card footer */
+    .card-footer {
+      padding: 14px 32px 20px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-footer-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; color: var(--dim);
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+      display: inline-block; margin-right: 6px;
+    }
+    @keyframes pulse-dot {
+      0%,100% { box-shadow: 0 0 4px var(--green); }
+      50%      { box-shadow: 0 0 10px var(--green); }
+    }
+
+    /* ============================================================
+       CONFETTI
+    ============================================================ */
+    #confetti-canvas {
+      position: fixed; inset: 0; z-index: 999;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       MODALS
+    ============================================================ */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+    .modal-box {
+      width: min(440px, 88vw);
+      background: var(--panel);
+      border: 1px solid var(--glass-bdr);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.8);
+      transform: translateY(20px) scale(0.97);
+      transition: transform 0.25s cubic-bezier(0.16,1,0.3,1);
+    }
+    .modal-overlay.open .modal-box { transform: none; }
+
+    .modal-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-bar-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: var(--muted);
+    }
+    .modal-close {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 16px; line-height: 1;
+      transition: color 0.15s;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body {
+      padding: 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; line-height: 1.9;
+      color: var(--text);
+    }
+    .modal-body .cmd-line { color: var(--cyan); margin-bottom: 12px; }
+    .modal-body .secret-label { color: var(--muted); font-size: 11px; }
+    .modal-body .secret-text {
+      color: var(--green); font-size: 14px;
+      margin-top: 6px; font-weight: 500;
+    }
+
+    /* Party mode banner */
+    #party-banner {
+      position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 800;
+      background: rgba(15,15,28,0.9);
+      border: 1px solid rgba(0,212,255,0.3);
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; color: var(--cyan);
+      box-shadow: 0 0 20px rgba(0,212,255,0.2);
+      opacity: 0; pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* Confirm toast */
+    #toast {
+      position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+      z-index: 800;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.35);
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; color: var(--green);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      opacity: 0; pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ============================================================
+       RESPONSIVE
+    ============================================================ */
+    @media (max-width: 540px) {
+      .card-header, .card-body, .card-footer { padding-left: 20px; padding-right: 20px; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .card-actions { flex-direction: column; }
+      .btn { min-width: 100%; }
+      .terminal-body { padding: 16px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Animated background canvas -->
+<canvas id="bg-canvas"></canvas>
+<div class="grid-overlay"></div>
+
+<!-- Confetti canvas -->
+<canvas id="confetti-canvas"></canvas>
+
+<!-- Party mode banner -->
+<div id="party-banner">🎉 Party Mode Activated — sudo party --force</div>
+
+<!-- Confirm toast -->
+<div id="toast">✓ Presença confirmada. Commit pushed to production.</div>
+
+<!-- Secret modal -->
+<div class="modal-overlay" id="secret-modal">
+  <div class="modal-box">
+    <div class="modal-bar">
+      <span class="modal-bar-title">~/secrets/.unlocked</span>
+      <button class="modal-close" id="secret-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="cmd-line">$ sudo reveal-secret</div>
+      <div class="secret-label">// Segredo desbloqueado:</div>
+      <div class="secret-text">🍹 Você garantiu o direito de pagar uma caipirinha ao aniversariante.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Main stage -->
+<div id="stage">
+
+  <!-- Terminal -->
+  <div id="terminal">
+    <div class="terminal-bar">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span class="terminal-title">bash — pedro@birthday-server: ~/deployments</span>
+    </div>
+    <div class="terminal-body" id="terminal-body">
+      <!-- Lines injected by JS -->
+    </div>
+  </div>
+
+  <!-- Invitation Card (hidden initially) -->
+  <div id="card">
+    <div class="card-glow"></div>
+
+    <div class="card-header">
+      <div class="card-eyebrow">deployment/production · v1.0.0</div>
+      <div class="card-logo-wrap" id="logo-btn" title="Clique 5× para desbloquear um segredo">
+        <div class="card-logo">🎂</div>
+        <div>
+          <div class="card-title">Pedro's Birthday<br>Deployment</div>
+          <div class="card-subtitle">release/2025 · build #100 · main</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-key">Data</div>
+          <div class="meta-val">27 de Junho</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-key">Horário</div>
+          <div class="meta-val">19:00</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-key">Status</div>
+          <div class="meta-val"><span class="tag">● deployed</span></div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-key">Environment</div>
+          <div class="meta-val">production</div>
+        </div>
+      </div>
+
+      <!-- Countdown -->
+      <div class="countdown-wrap">
+        <div class="count-cell"><div class="count-num" id="c-days">--</div><div class="count-lbl">Dias</div></div>
+        <div class="count-cell"><div class="count-num" id="c-hrs">--</div><div class="count-lbl">Horas</div></div>
+        <div class="count-cell"><div class="count-num" id="c-min">--</div><div class="count-lbl">Min</div></div>
+        <div class="count-cell"><div class="count-num" id="c-sec">--</div><div class="count-lbl">Seg</div></div>
+      </div>
+
+      <!-- Actions -->
+      <div class="card-actions" style="margin-top:20px;">
+        <a href="https://www.google.com/maps/place/Budega+do+Raul/@-3.7951664,-38.5032008,17z/data=!3m1!4b1!4m6!3m5!1s0x7c74f6df443387f:0x1fde03ddb709f56f!8m2!3d-3.7951664!4d-38.5006259!16s%2Fg%2F11f50l2qhp?entry=ttu&g_ep=EgoyMDI2MDYxNi4wIKXMDSoASAFQAw%3D%3D" target="_blank" class="btn btn-secondary" id="btn-map">
+          📍 Abrir localização
+        </a>
+        <button class="btn btn-primary" id="btn-confirm">
+          ✅ Confirmar Presença
+        </button>
+      </div>
+    </div>
+
+    <div class="card-footer">
+      <span class="card-footer-text"><span class="status-dot"></span>system: online · latency: 0ms</span>
+      <span class="card-footer-text">🔒 encrypted invite</span>
+    </div>
+  </div>
+
+</div><!-- /stage -->
+
+<script>
+/* ============================================================
+   PARTICLE BACKGROUND
+============================================================ */
+(function () {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx    = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function createParticles() {
+    particles = [];
+    const count = Math.floor((W * H) / 18000);
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: rand(0, W), y: rand(0, H),
+        r: rand(0.4, 1.8),
+        vx: rand(-0.08, 0.08), vy: rand(-0.06, 0.06),
+        alpha: rand(0.1, 0.5)
+      });
+    }
+  }
+  createParticles();
+  window.addEventListener('resize', createParticles);
+
+  function drawParticles() {
+    ctx.clearRect(0, 0, W, H);
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,212,255,${p.alpha})`;
+      ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+    });
+    requestAnimationFrame(drawParticles);
+  }
+  drawParticles();
+})();
+
+/* ============================================================
+   TERMINAL SEQUENCE
+============================================================ */
+const body$  = document.getElementById('terminal-body');
+const terminal = document.getElementById('terminal');
+const card     = document.getElementById('card');
+
+// Line definitions
+// type: 'cmd' | 'info' | 'ok' | 'hi' | 'warn' | 'blank' | 'progress'
+const SEQUENCE = [
+  { text: 'deploy birthday-event --env=production', type: 'cmd', delay: 600 },
+  { type: 'blank', delay: 180 },
+  { text: 'Loading environment...', type: 'info', delay: 280 },
+  { text: 'Loading guests...', type: 'info', delay: 220 },
+  { text: 'Loading food...', type: 'info', delay: 200 },
+  { text: 'Loading drinks...', type: 'info', delay: 200 },
+  { text: 'Loading surprises...', type: 'info', delay: 320 },
+  { type: 'blank', delay: 180 },
+  { text: 'Checking dependencies...', type: 'info', delay: 120 },
+  { type: 'progress', id: 'bar1', label: 'Building artifacts', delay: 0, duration: 2200 },
+  { type: 'blank', delay: 200 },
+  { text: '✓ Build Successful', type: 'ok', delay: 0 },
+  { type: 'blank', delay: 260 },
+  { text: 'Deploying Birthday Event v1.0.0 → production', type: 'hi', delay: 300 },
+  { type: 'progress', id: 'bar2', label: 'Deploying release/2025', delay: 0, duration: 2800 },
+  { type: 'blank', delay: 240 },
+  { text: '✓ Deployment Complete.', type: 'ok', delay: 0 },
+  { type: 'blank', delay: 800 },
+  { text: 'You have been invited.', type: 'hi', delay: 0 },
+];
+
+function makeLine(def) {
+  const el = document.createElement('div');
+  el.className = 'line';
+
+  if (def.type === 'blank') {
+    el.style.height = '8px';
+    el.style.opacity = 1;
+    return el;
+  }
+
+  if (def.type === 'cmd') {
+    el.innerHTML = `<span class="prompt">$</span><span class="cmd"> ${def.text}</span>`;
+  } else if (def.type === 'progress') {
+    // progress rendered separately
+    el.innerHTML = `
+      <div style="width:100%">
+        <div class="progress-wrap visible" id="${def.id}-wrap">
+          <div class="progress-track"><div class="progress-fill" id="${def.id}-fill"></div></div>
+          <div class="progress-label"><span id="${def.id}-name">${def.label}</span><span id="${def.id}-pct">0%</span></div>
+        </div>
+      </div>`;
+    el.style.opacity = 1;
+    return el;
+  } else {
+    el.innerHTML = `<span class="${def.type}">${def.text}</span>`;
+  }
+  return el;
+}
+
+function animateProgress(id, duration) {
+  return new Promise(res => {
+    const fill = document.getElementById(`${id}-fill`);
+    const pct  = document.getElementById(`${id}-pct`);
+    const obj  = { val: 0 };
+    anime({
+      targets: obj,
+      val: 100,
+      duration,
+      easing: 'easeInOutQuart',
+      update() {
+        const v = Math.round(obj.val);
+        fill.style.width = v + '%';
+        pct.textContent  = v + '%';
+      },
+      complete: res
+    });
+  });
+}
+
+async function runSequence() {
+  let i = 0;
+  for (const def of SEQUENCE) {
+    await new Promise(r => setTimeout(r, def.delay || 0));
+
+    if (def.type === 'progress') {
+      const el = makeLine(def);
+      body$.appendChild(el);
+      body$.scrollTop = body$.scrollHeight;
+      await animateProgress(def.id, def.duration);
+      continue;
+    }
+
+    const el = makeLine(def);
+    body$.appendChild(el);
+
+    if (def.type !== 'blank') {
+      anime({
+        targets: el,
+        opacity: [0, 1],
+        translateX: [-8, 0],
+        duration: 260,
+        easing: 'easeOutCubic'
+      });
+    }
+
+    body$.scrollTop = body$.scrollHeight;
+    i++;
+  }
+
+  // Small dramatic pause, then reveal card
+  await new Promise(r => setTimeout(r, 1200));
+  revealCard();
+}
+
+/* ============================================================
+   CARD REVEAL
+============================================================ */
+function revealCard() {
+  // Shrink terminal up
+  anime({
+    targets: terminal,
+    opacity: [1, 0],
+    translateY: [0, -30],
+    scale: [1, 0.92],
+    duration: 700,
+    easing: 'easeInCubic',
+    complete() { terminal.style.display = 'none'; }
+  });
+
+  // Bring in card
+  card.classList.add('active');
+  anime({
+    targets: card,
+    opacity: [0, 1],
+    translateY: [40, 0],
+    scale: [0.94, 1],
+    duration: 900,
+    easing: 'easeOutExpo',
+    delay: 400
+  });
+
+  // Stagger card children
+  anime({
+    targets: '#card .meta-item, #card .count-cell, #card .btn',
+    opacity: [0, 1],
+    translateY: [16, 0],
+    duration: 600,
+    easing: 'easeOutCubic',
+    delay: anime.stagger(70, { start: 900 })
+  });
+}
+
+/* ============================================================
+   COUNTDOWN
+============================================================ */
+function updateCountdown() {
+  const target = new Date('2026-06-27T19:00:00');
+  const now    = new Date();
+  const diff   = Math.max(0, target - now);
+
+  const days = Math.floor(diff / 86400000);
+  const hrs  = Math.floor((diff % 86400000) / 3600000);
+  const min  = Math.floor((diff % 3600000)  / 60000);
+  const sec  = Math.floor((diff % 60000)    / 1000);
+
+  document.getElementById('c-days').textContent = String(days).padStart(2,'0');
+  document.getElementById('c-hrs').textContent  = String(hrs).padStart(2,'0');
+  document.getElementById('c-min').textContent  = String(min).padStart(2,'0');
+  document.getElementById('c-sec').textContent  = String(sec).padStart(2,'0');
+}
+updateCountdown();
+setInterval(updateCountdown, 1000);
+
+/* ============================================================
+   CONFIRM BUTTON
+============================================================ */
+document.getElementById('btn-confirm').addEventListener('click', function () {
+  this.textContent = '✓ Confirmado!';
+  this.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+  this.style.boxShadow  = '0 4px 20px rgba(16,185,129,0.4)';
+  showToast();
+});
+
+function showToast() {
+  const t = document.getElementById('toast');
+  anime({ targets: t, opacity: [0,1], translateY: [10,0], duration: 400, easing: 'easeOutCubic' });
+  setTimeout(() => {
+    anime({ targets: t, opacity: 0, duration: 400, easing: 'easeInCubic' });
+  }, 3200);
+}
+
+/* ============================================================
+   EASTER EGG — LOGO CLICK × 5
+============================================================ */
+let logoClicks = 0;
+document.getElementById('logo-btn').addEventListener('click', function () {
+  logoClicks++;
+  anime({
+    targets: this,
+    scale: [1, 1.08, 1],
+    duration: 250,
+    easing: 'easeOutQuad'
+  });
+  if (logoClicks >= 5) {
+    logoClicks = 0;
+    document.getElementById('secret-modal').classList.add('open');
+  }
+});
+document.getElementById('secret-close').addEventListener('click', () => {
+  document.getElementById('secret-modal').classList.remove('open');
+});
+document.getElementById('secret-modal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('open');
+});
+
+/* ============================================================
+   EASTER EGG — KONAMI CODE
+============================================================ */
+const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'];
+let konamiIdx = 0;
+
+document.addEventListener('keydown', e => {
+  if (e.code === KONAMI[konamiIdx]) {
+    konamiIdx++;
+    if (konamiIdx === KONAMI.length) {
+      konamiIdx = 0;
+      activatePartyMode();
+    }
+  } else {
+    konamiIdx = 0;
+  }
+});
+
+function activatePartyMode() {
+  const banner = document.getElementById('party-banner');
+  anime({ targets: banner, opacity: [0,1], translateY: [-12,0], duration: 400, easing: 'easeOutCubic' });
+  setTimeout(() => {
+    anime({ targets: banner, opacity: 0, duration: 400, easing: 'easeInCubic' });
+  }, 3000);
+  launchConfetti();
+}
+
+/* ============================================================
+   CONFETTI
+============================================================ */
+function launchConfetti() {
+  const canvas = document.getElementById('confetti-canvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const colors = ['#00d4ff','#7c3aed','#10b981','#f59e0b','#ff6b6b','#fff'];
+  const pieces = Array.from({length: 180}, () => ({
+    x: Math.random() * canvas.width,
+    y: -20,
+    r: 4 + Math.random() * 5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    vx: (Math.random() - 0.5) * 4,
+    vy: 2 + Math.random() * 4,
+    rot: Math.random() * 360,
+    rv: (Math.random() - 0.5) * 6,
+    alpha: 1
+  }));
+
+  let frame;
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    pieces.forEach(p => {
+      if (p.alpha <= 0) return;
+      alive = true;
+      p.x  += p.vx; p.y += p.vy; p.rot += p.rv;
+      if (p.y > canvas.height * 0.8) p.alpha -= 0.012;
+      ctx.save();
+      ctx.globalAlpha = p.alpha;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot * Math.PI / 180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.r/2, -p.r/2, p.r, p.r * 0.5);
+      ctx.restore();
+    });
+    if (alive) frame = requestAnimationFrame(draw);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  if (frame) cancelAnimationFrame(frame);
+  draw();
+}
+
+/* ============================================================
+   BOOT
+============================================================ */
+// Brief fade-in of terminal before sequence starts
+anime({
+  targets: terminal,
+  opacity: [0, 1],
+  translateY: [20, 0],
+  duration: 700,
+  easing: 'easeOutCubic',
+  complete: runSequence
+});
+</script>
+</body>
+</html>
