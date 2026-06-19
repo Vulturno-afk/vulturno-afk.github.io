@@ -461,7 +461,7 @@
 <div id="party-banner">🎉 Party Mode Activated — sudo party --force</div>
 
 <!-- Confirm toast -->
-<div id="toast">✓ Presença confirmada. Commit pushed to production.</div>
+<div id="toast">✓ Presença confirmada. Entrando no grupo do WhatsApp...</div>
 
 <!-- Secret modal -->
 <div class="modal-overlay" id="secret-modal">
@@ -787,6 +787,9 @@ document.getElementById('btn-confirm').addEventListener('click', function () {
   this.style.background = 'linear-gradient(135deg,#10b981,#059669)';
   this.style.boxShadow  = '0 4px 20px rgba(16,185,129,0.4)';
   showToast();
+  setTimeout(() => {
+    window.open('https://chat.whatsapp.com/GUl4Oy4PMdMCugBp6t9kqJ?s=cl&p=i&ilr=0', '_blank');
+  }, 800);
 });
 
 function showToast() {
